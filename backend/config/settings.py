@@ -45,6 +45,11 @@ LOGGING = {
             "level": "ERROR",
             "propagate": False,
         },
+        "ai_tools": {
+            "handlers": ["console"],
+            "level": "ERROR",
+            "propagate": False,
+        },
     },
 }
 

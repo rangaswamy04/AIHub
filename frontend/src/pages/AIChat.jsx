@@ -270,69 +270,42 @@ function AIChat() {
     setLoading(true);
 
 
-    const response =
-      await sendAIMessage(
+    try {
+      const response = await sendAIMessage(
         currentPrompt,
         currentConversation
       );
 
+      if (response.ok) {
+        setCurrentConversation(response.data.conversation_id);
+        setMessages((previous) => [
+          ...previous,
+          {
+            role: "assistant",
+            content: response.data.response,
+          },
+        ]);
 
-    if (response.ok) {
-
-      setCurrentConversation(
-        response.data.conversation_id
-      );
-
-
-      setMessages((previous) => [
-
-        ...previous,
-
-        {
-          role: "assistant",
-          content: response.data.response,
-        },
-
-      ]);
-
-
-      loadConversations();
-
-    }
-
-
-    else if (
-      response.data.error?.includes(
-        "Free usage limit"
-      )
-    ) {
-
-      setLimitReached(true);
-
-
-      setMessages((previous) =>
-
-        previous.filter(
-          (message) =>
-            message !== userMessage
-        )
-
-      );
-
-    }
-
-
-    else {
-
+        loadConversations();
+      } else if (
+        response.data.error?.toLowerCase().includes("limit")
+      ) {
+        setLimitReached(true);
+        setMessages((previous) =>
+          previous.filter((message) => message !== userMessage)
+        );
+      } else {
+        setError(
+          response.data.error || "Unable to get an AI response."
+        );
+      }
+    } catch (requestError) {
       setError(
-        response.data.error ||
-        "Unable to get an AI response."
+        requestError?.message || "Unable to get an AI response."
       );
-
+    } finally {
+      setLoading(false);
     }
-
-
-    setLoading(false);
   }
 
 

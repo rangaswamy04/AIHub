@@ -1,3 +1,5 @@
+import logging
+
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
@@ -15,6 +17,9 @@ from .services import (
     analyze_code,
     analyze_resume
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 # ==========================================
@@ -210,6 +215,7 @@ class AIChatView(APIView):
 
 
         except Exception:
+            logger.exception("AI chat request failed for user %s", request.user.pk)
 
             return Response(
                 {

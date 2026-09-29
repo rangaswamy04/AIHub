@@ -1,9 +1,11 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { loginUser } from "../services/api";
+import { useAuth } from "../context/AuthContext";
 
 function Login() {
   const navigate = useNavigate();
+  const { setUser } = useAuth();
 
   const [formData, setFormData] = useState({
     username: "",
@@ -33,6 +35,11 @@ function Login() {
       localStorage.setItem("username", result.data.username);
       localStorage.setItem("email", result.data.email);
       localStorage.setItem("plan", "free");
+      setUser({
+        username: result.data.username,
+        email: result.data.email,
+        plan: "free",
+      });
 
       navigate("/");
     } else {

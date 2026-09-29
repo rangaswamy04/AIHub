@@ -1,11 +1,10 @@
 from google import genai
+import logging
 import os
 import time
 
 
-client = genai.Client(
-    api_key=os.getenv("GEMINI_API_KEY")
-)
+logger = logging.getLogger(__name__)
 
 
 MODELS = [
@@ -16,19 +15,21 @@ MODELS = [
 
 def generate_ai_response(prompt):
 
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise RuntimeError("GEMINI_API_KEY is not configured")
+
+    client = genai.Client(api_key=api_key)
+
     last_error = None
 
     for model in MODELS:
 
         try:
-            print(f"Trying AI model: {model}")
-
             response = client.models.generate_content(
                 model=model,
                 contents=prompt
             )
-
-            print(f"AI model succeeded: {model}")
 
             return response.text
 
@@ -36,19 +37,11 @@ def generate_ai_response(prompt):
 
             last_error = error
 
-            print(
-                f"AI model failed: {model} -> {error}"
-            )
+            logger.exception("Gemini request failed for model %s", model)
 
             time.sleep(1)
 
-    print(
-        f"All AI models failed: {last_error}"
-    )
-
-    raise Exception(
-        "AI service is temporarily unavailable."
-    )
+    raise RuntimeError("All configured Gemini models failed") from last_error
 
 
 def generate_text(topic):
