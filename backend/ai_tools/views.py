@@ -289,6 +289,7 @@ class TextGeneratorView(APIView):
 
 
         except Exception:
+            logger.exception("Text generation failed for user %s", request.user.pk)
 
             return Response(
                 {
@@ -362,6 +363,7 @@ class SummarizerView(APIView):
 
 
         except Exception:
+            logger.exception("Text summarization failed for user %s", request.user.pk)
 
             return Response(
                 {
@@ -435,6 +437,7 @@ class CodeAssistantView(APIView):
 
 
         except Exception:
+            logger.exception("Code analysis failed for user %s", request.user.pk)
 
             return Response(
                 {
@@ -508,6 +511,7 @@ class ResumeAnalyzerView(APIView):
 
 
         except Exception:
+            logger.exception("Resume analysis failed for user %s", request.user.pk)
 
             return Response(
                 {

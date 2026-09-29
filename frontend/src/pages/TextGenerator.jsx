@@ -20,18 +20,21 @@ function TextGenerator() {
 
     setLoading(true);
 
-    const response = await generateText(topic);
+    try {
+      const response = await generateText(topic);
 
-    if (response.ok) {
-      setResult(response.data.result);
-    } else {
+      if (response.ok) {
+        setResult(response.data.result);
+      } else {
+        setError(response.data.error || "Unable to generate text.");
+      }
+    } catch (requestError) {
       setError(
-        response.data.error ||
-        "Unable to generate text."
+        requestError?.message || "Unable to generate text."
       );
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
   }
 
   return (

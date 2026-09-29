@@ -20,18 +20,21 @@ function Summarizer() {
 
     setLoading(true);
 
-    const response = await summarizeText(text);
+    try {
+      const response = await summarizeText(text);
 
-    if (response.ok) {
-      setResult(response.data.result);
-    } else {
+      if (response.ok) {
+        setResult(response.data.result);
+      } else {
+        setError(response.data.error || "Unable to summarize the text.");
+      }
+    } catch (requestError) {
       setError(
-        response.data.error ||
-        "Unable to summarize the text."
+        requestError?.message || "Unable to summarize the text."
       );
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
   }
 
   return (

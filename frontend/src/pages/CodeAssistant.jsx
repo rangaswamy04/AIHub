@@ -20,18 +20,21 @@ function CodeAssistant() {
 
     setLoading(true);
 
-    const response = await analyzeCode(code);
+    try {
+      const response = await analyzeCode(code);
 
-    if (response.ok) {
-      setResult(response.data.result);
-    } else {
+      if (response.ok) {
+        setResult(response.data.result);
+      } else {
+        setError(response.data.error || "Unable to analyze the code.");
+      }
+    } catch (requestError) {
       setError(
-        response.data.error ||
-        "Unable to analyze the code."
+        requestError?.message || "Unable to analyze the code."
       );
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
   }
 
   return (

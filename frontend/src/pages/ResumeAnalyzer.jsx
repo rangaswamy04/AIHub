@@ -20,18 +20,21 @@ function ResumeAnalyzer() {
 
     setLoading(true);
 
-    const response = await analyzeResume(resume);
+    try {
+      const response = await analyzeResume(resume);
 
-    if (response.ok) {
-      setResult(response.data.result);
-    } else {
+      if (response.ok) {
+        setResult(response.data.result);
+      } else {
+        setError(response.data.error || "Unable to analyze the resume.");
+      }
+    } catch (requestError) {
       setError(
-        response.data.error ||
-        "Unable to analyze the resume."
+        requestError?.message || "Unable to analyze the resume."
       );
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
   }
 
   return (

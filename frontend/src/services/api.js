@@ -92,6 +92,58 @@ export async function sendAIMessage(prompt, conversationId = null) {
   }
 }
 
+async function postAITool(endpoint, payload) {
+  const token = localStorage.getItem("token");
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 90000);
+
+  try {
+    const response = await fetch(`${API_URL}/ai/${endpoint}/`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Token ${token}`,
+      },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+
+    const responseText = await response.text();
+    let data;
+
+    try {
+      data = responseText ? JSON.parse(responseText) : {};
+    } catch {
+      data = {
+        error: `The AI service returned an unreadable response (HTTP ${response.status}).`,
+      };
+    }
+
+    if (!data || typeof data !== "object") {
+      data = {
+        error: `The AI service returned an invalid response (HTTP ${response.status}).`,
+      };
+    }
+
+    if (!response.ok && !data.error) {
+      data.error = data.detail || `AI request failed (HTTP ${response.status}).`;
+    }
+
+    return { ok: response.ok, data };
+  } catch (error) {
+    return {
+      ok: false,
+      data: {
+        error: error.name === "AbortError"
+          ? "The AI request timed out. Please try again."
+          : "Unable to reach the AI service. Please check your connection and try again.",
+      },
+    };
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 export async function getConversations() {
   const token = localStorage.getItem("token");
 
@@ -132,91 +184,19 @@ export async function getMessages(conversationId) {
 }
 
 export async function generateText(topic) {
-  const token = localStorage.getItem("token");
-
-  const response = await fetch(`${API_URL}/ai/generate-text/`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Token ${token}`,
-    },
-    body: JSON.stringify({
-      topic: topic,
-    }),
-  });
-
-  const data = await response.json();
-
-  return {
-    ok: response.ok,
-    data: data,
-  };
+  return postAITool("generate-text", { topic });
 }
 
 export async function summarizeText(text) {
-  const token = localStorage.getItem("token");
-
-  const response = await fetch(`${API_URL}/ai/summarize/`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Token ${token}`,
-    },
-    body: JSON.stringify({
-      text: text,
-    }),
-  });
-
-  const data = await response.json();
-
-  return {
-    ok: response.ok,
-    data: data,
-  };
+  return postAITool("summarize", { text });
 }
 
 export async function analyzeCode(code) {
-  const token = localStorage.getItem("token");
-
-  const response = await fetch(`${API_URL}/ai/code-assistant/`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Token ${token}`,
-    },
-    body: JSON.stringify({
-      code: code,
-    }),
-  });
-
-  const data = await response.json();
-
-  return {
-    ok: response.ok,
-    data: data,
-  };
+  return postAITool("code-assistant", { code });
 }
 
 export async function analyzeResume(resume) {
-  const token = localStorage.getItem("token");
-
-  const response = await fetch(`${API_URL}/ai/resume-analyzer/`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Token ${token}`,
-    },
-    body: JSON.stringify({
-      resume: resume,
-    }),
-  });
-
-  const data = await response.json();
-
-  return {
-    ok: response.ok,
-    data: data,
-  };
+  return postAITool("resume-analyzer", { resume });
 }
 
 export async function getUsage() {
