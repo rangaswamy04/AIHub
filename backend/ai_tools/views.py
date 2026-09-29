@@ -11,6 +11,7 @@ from subscriptions.models import Usage
 from config.throttles import AIRateThrottle
 
 from .services import (
+    AIServiceUnavailable,
     generate_ai_response,
     generate_text,
     summarize_text,
@@ -288,6 +289,13 @@ class TextGeneratorView(APIView):
             )
 
 
+        except AIServiceUnavailable:
+            logger.warning("Text generation unavailable for user %s", request.user.pk)
+            return Response(
+                {"error": "AI service is temporarily unavailable. Please try again."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
         except Exception:
             logger.exception("Text generation failed for user %s", request.user.pk)
 
@@ -361,6 +369,13 @@ class SummarizerView(APIView):
                 status=status.HTTP_200_OK
             )
 
+
+        except AIServiceUnavailable:
+            logger.warning("Text summarization unavailable for user %s", request.user.pk)
+            return Response(
+                {"error": "AI service is temporarily unavailable. Please try again."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
 
         except Exception:
             logger.exception("Text summarization failed for user %s", request.user.pk)
@@ -436,6 +451,13 @@ class CodeAssistantView(APIView):
             )
 
 
+        except AIServiceUnavailable:
+            logger.warning("Code analysis unavailable for user %s", request.user.pk)
+            return Response(
+                {"error": "AI service is temporarily unavailable. Please try again."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
         except Exception:
             logger.exception("Code analysis failed for user %s", request.user.pk)
 
@@ -509,6 +531,13 @@ class ResumeAnalyzerView(APIView):
                 status=status.HTTP_200_OK
             )
 
+
+        except AIServiceUnavailable:
+            logger.warning("Resume analysis unavailable for user %s", request.user.pk)
+            return Response(
+                {"error": "AI service is temporarily unavailable. Please try again."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
 
         except Exception:
             logger.exception("Resume analysis failed for user %s", request.user.pk)

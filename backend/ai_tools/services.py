@@ -13,17 +13,21 @@ MODELS = [
 ]
 
 
+class AIServiceUnavailable(RuntimeError):
+    """Raised when no configured Gemini model can generate a response."""
+
+
 def generate_ai_response(prompt):
 
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
-        raise RuntimeError("GEMINI_API_KEY is not configured")
+        raise AIServiceUnavailable("GEMINI_API_KEY is not configured")
 
     client = genai.Client(api_key=api_key)
 
     last_error = None
 
-    for model in MODELS:
+    for model_index, model in enumerate(MODELS):
 
         try:
             response = client.models.generate_content(
@@ -37,11 +41,19 @@ def generate_ai_response(prompt):
 
             last_error = error
 
-            logger.exception("Gemini request failed for model %s", model)
+            if model_index < len(MODELS) - 1:
+                logger.warning(
+                    "Gemini model %s failed; trying configured fallback model",
+                    model,
+                    exc_info=True,
+                )
+                time.sleep(1)
+            else:
+                logger.exception("Gemini fallback model %s also failed", model)
 
-            time.sleep(1)
-
-    raise RuntimeError("All configured Gemini models failed") from last_error
+    raise AIServiceUnavailable(
+        "All configured Gemini models are temporarily unavailable"
+    ) from last_error
 
 
 def generate_text(topic):

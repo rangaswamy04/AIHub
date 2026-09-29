@@ -3,7 +3,10 @@ from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
+from google.genai.errors import ServerError
 from rest_framework.test import APIClient
+
+from .services import AIServiceUnavailable, MODELS, generate_ai_response
 
 
 class AIChatViewTests(TestCase):
@@ -59,6 +62,49 @@ class GeminiConfigurationTests(TestCase):
         client.assert_not_called()
 
 
+class GeminiFallbackTests(TestCase):
+    def setUp(self):
+        self.unavailable = ServerError(
+            503,
+            {
+                "error": {
+                    "status": "UNAVAILABLE",
+                    "message": "The model is temporarily unavailable.",
+                }
+            },
+        )
+
+    @patch.dict(os.environ, {"GEMINI_API_KEY": "test-key"})
+    @patch("ai_tools.services.time.sleep")
+    @patch("ai_tools.services.genai.Client")
+    def test_primary_503_uses_fallback_model(self, client_factory, _sleep):
+        fallback_response = type("Response", (), {"text": "Fallback answer"})()
+        client_factory.return_value.models.generate_content.side_effect = [
+            self.unavailable,
+            fallback_response,
+        ]
+
+        with self.assertLogs("ai_tools.services", level="WARNING"):
+            answer = generate_ai_response("Test prompt")
+
+        self.assertEqual(answer, "Fallback answer")
+        calls = client_factory.return_value.models.generate_content.call_args_list
+        self.assertEqual([call.kwargs["model"] for call in calls], MODELS)
+
+    @patch.dict(os.environ, {"GEMINI_API_KEY": "test-key"})
+    @patch("ai_tools.services.time.sleep")
+    @patch("ai_tools.services.genai.Client")
+    def test_all_model_failures_raise_clean_service_error(self, client_factory, _sleep):
+        client_factory.return_value.models.generate_content.side_effect = [
+            self.unavailable,
+            self.unavailable,
+        ]
+
+        with self.assertLogs("ai_tools.services", level="WARNING"):
+            with self.assertRaises(AIServiceUnavailable):
+                generate_ai_response("Test prompt")
+
+
 class AIToolEndpointTests(TestCase):
     tool_cases = (
         ("/api/ai/generate-text/", "topic", "ai_tools.views.generate_text"),
@@ -110,3 +156,22 @@ class AIToolEndpointTests(TestCase):
                     "AI service is currently unavailable.",
                 )
                 self.assertIn("simulated tool failure", captured.output[0])
+
+    def test_all_model_failures_return_clean_json_503(self):
+        for path, field, service_path in self.tool_cases:
+            with self.subTest(path=path):
+                with patch(
+                    service_path,
+                    side_effect=AIServiceUnavailable("provider unavailable"),
+                ):
+                    response = self.client.post(
+                        path,
+                        {field: "Test input"},
+                        format="json",
+                    )
+
+                self.assertEqual(response.status_code, 503)
+                self.assertEqual(
+                    response.json(),
+                    {"error": "AI service is temporarily unavailable. Please try again."},
+                )
