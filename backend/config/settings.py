@@ -157,3 +157,5 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
     "https://thunderous-caramel-4d5a7e.netlify.app",
 ]
+
+CORS_ALLOW_CREDENTIALS = True
