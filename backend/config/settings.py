@@ -28,7 +28,7 @@ SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "django-insecure-local-development-k
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv("DJANGO_DEBUG", "False") == "True"
 
-ALLOWED_HOSTS = ["localhost", "127.0.0.1", os.getenv("RENDER_INTERNAL_HOSTNAME", "")]
+ALLOWED_HOSTS = ["localhost", "127.0.0.1", "aihub-backend-ak1h.onrender.com",]
 
 
 # Application definition
