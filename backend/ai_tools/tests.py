@@ -3,10 +3,11 @@ from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
+import httpx
 from google.genai.errors import ServerError
 from rest_framework.test import APIClient
 
-from .services import AIServiceUnavailable, MODELS, generate_ai_response
+from .services import AIServiceUnavailable, GEMINI_TIMEOUT_MS, MODELS, generate_ai_response
 
 
 class AIChatViewTests(TestCase):
@@ -75,9 +76,8 @@ class GeminiFallbackTests(TestCase):
         )
 
     @patch.dict(os.environ, {"GEMINI_API_KEY": "test-key"})
-    @patch("ai_tools.services.time.sleep")
     @patch("ai_tools.services.genai.Client")
-    def test_primary_503_uses_fallback_model(self, client_factory, _sleep):
+    def test_primary_503_uses_fallback_model(self, client_factory):
         fallback_response = type("Response", (), {"text": "Fallback answer"})()
         client_factory.return_value.models.generate_content.side_effect = [
             self.unavailable,
@@ -90,11 +90,41 @@ class GeminiFallbackTests(TestCase):
         self.assertEqual(answer, "Fallback answer")
         calls = client_factory.return_value.models.generate_content.call_args_list
         self.assertEqual([call.kwargs["model"] for call in calls], MODELS)
+        options = client_factory.call_args.kwargs["http_options"]
+        self.assertEqual(options.timeout, GEMINI_TIMEOUT_MS)
+        self.assertEqual(options.retry_options.attempts, 1)
 
     @patch.dict(os.environ, {"GEMINI_API_KEY": "test-key"})
-    @patch("ai_tools.services.time.sleep")
     @patch("ai_tools.services.genai.Client")
-    def test_all_model_failures_raise_clean_service_error(self, client_factory, _sleep):
+    def test_primary_timeout_uses_fallback_model(self, client_factory):
+        fallback_response = type("Response", (), {"text": "Fallback answer"})()
+        client_factory.return_value.models.generate_content.side_effect = [
+            httpx.ReadTimeout("provider request timed out"),
+            fallback_response,
+        ]
+
+        with self.assertLogs("ai_tools.services", level="WARNING"):
+            answer = generate_ai_response("Test prompt")
+
+        self.assertEqual(answer, "Fallback answer")
+        calls = client_factory.return_value.models.generate_content.call_args_list
+        self.assertEqual([call.kwargs["model"] for call in calls], MODELS)
+
+    @patch.dict(os.environ, {"GEMINI_API_KEY": "test-key"})
+    @patch("ai_tools.services.genai.Client")
+    def test_primary_timeout_and_fallback_failure_raise_service_error(self, client_factory):
+        client_factory.return_value.models.generate_content.side_effect = [
+            httpx.ReadTimeout("provider request timed out"),
+            self.unavailable,
+        ]
+
+        with self.assertLogs("ai_tools.services", level="WARNING"):
+            with self.assertRaises(AIServiceUnavailable):
+                generate_ai_response("Test prompt")
+
+    @patch.dict(os.environ, {"GEMINI_API_KEY": "test-key"})
+    @patch("ai_tools.services.genai.Client")
+    def test_all_model_failures_raise_clean_service_error(self, client_factory):
         client_factory.return_value.models.generate_content.side_effect = [
             self.unavailable,
             self.unavailable,
@@ -103,7 +133,6 @@ class GeminiFallbackTests(TestCase):
         with self.assertLogs("ai_tools.services", level="WARNING"):
             with self.assertRaises(AIServiceUnavailable):
                 generate_ai_response("Test prompt")
-
 
 class AIToolEndpointTests(TestCase):
     tool_cases = (
@@ -175,3 +204,24 @@ class AIToolEndpointTests(TestCase):
                     response.json(),
                     {"error": "AI service is temporarily unavailable. Please try again."},
                 )
+
+    @patch.dict(os.environ, {"GEMINI_API_KEY": "test-key"})
+    @patch("ai_tools.services.genai.Client")
+    def test_all_timeouts_return_clean_tool_503(self, client_factory):
+        client_factory.return_value.models.generate_content.side_effect = [
+            httpx.ReadTimeout("provider request timed out"),
+            httpx.ReadTimeout("fallback request timed out"),
+        ]
+
+        with self.assertLogs("ai_tools.services", level="WARNING"):
+            response = self.client.post(
+                "/api/ai/generate-text/",
+                {"topic": "Test input"},
+                format="json",
+            )
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(
+            response.json(),
+            {"error": "AI service is temporarily unavailable. Please try again."},
+        )

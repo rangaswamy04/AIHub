@@ -1,7 +1,7 @@
 from google import genai
 import logging
 import os
-import time
+from google.genai import types
 
 
 logger = logging.getLogger(__name__)
@@ -11,6 +11,10 @@ MODELS = [
     "gemini-3.6-flash",
     "gemma-4-26b-a4b-it",
 ]
+
+# HttpOptions.timeout is in milliseconds. A 10 second bound per model keeps a
+# primary attempt plus its fallback comfortably below Gunicorn's default limit.
+GEMINI_TIMEOUT_MS = 10_000
 
 
 class AIServiceUnavailable(RuntimeError):
@@ -23,7 +27,13 @@ def generate_ai_response(prompt):
     if not api_key:
         raise AIServiceUnavailable("GEMINI_API_KEY is not configured")
 
-    client = genai.Client(api_key=api_key)
+    client = genai.Client(
+        api_key=api_key,
+        http_options=types.HttpOptions(
+            timeout=GEMINI_TIMEOUT_MS,
+            retry_options=types.HttpRetryOptions(attempts=1),
+        ),
+    )
 
     last_error = None
 
@@ -38,7 +48,6 @@ def generate_ai_response(prompt):
             return response.text
 
         except Exception as error:
-
             last_error = error
 
             if model_index < len(MODELS) - 1:
@@ -47,7 +56,6 @@ def generate_ai_response(prompt):
                     model,
                     exc_info=True,
                 )
-                time.sleep(1)
             else:
                 logger.exception("Gemini fallback model %s also failed", model)
 
