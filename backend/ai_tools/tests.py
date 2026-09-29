@@ -74,6 +74,26 @@ class GeminiFallbackTests(TestCase):
                 }
             },
         )
+        self.deadline_exceeded = ServerError(
+            504,
+            {
+                "error": {
+                    "status": "DEADLINE_EXCEEDED",
+                    "message": "The operation deadline expired.",
+                }
+            },
+        )
+
+    @patch.dict(os.environ, {"GEMINI_API_KEY": "test-key"})
+    @patch("ai_tools.services.genai.Client")
+    def test_primary_success_returns_without_fallback(self, client_factory):
+        client_factory.return_value.models.generate_content.return_value.text = "Primary answer"
+
+        answer = generate_ai_response("Test prompt")
+
+        self.assertEqual(answer, "Primary answer")
+        calls = client_factory.return_value.models.generate_content.call_args_list
+        self.assertEqual([call.kwargs["model"] for call in calls], [MODELS[0]])
 
     @patch.dict(os.environ, {"GEMINI_API_KEY": "test-key"})
     @patch("ai_tools.services.genai.Client")
@@ -89,7 +109,7 @@ class GeminiFallbackTests(TestCase):
 
         self.assertEqual(answer, "Fallback answer")
         calls = client_factory.return_value.models.generate_content.call_args_list
-        self.assertEqual([call.kwargs["model"] for call in calls], MODELS)
+        self.assertEqual([call.kwargs["model"] for call in calls], MODELS[:2])
         options = client_factory.call_args.kwargs["http_options"]
         self.assertEqual(options.timeout, GEMINI_TIMEOUT_MS)
         self.assertEqual(options.retry_options.attempts, 1)
@@ -108,13 +128,47 @@ class GeminiFallbackTests(TestCase):
 
         self.assertEqual(answer, "Fallback answer")
         calls = client_factory.return_value.models.generate_content.call_args_list
+        self.assertEqual([call.kwargs["model"] for call in calls], MODELS[:2])
+
+    @patch.dict(os.environ, {"GEMINI_API_KEY": "test-key"})
+    @patch("ai_tools.services.genai.Client")
+    def test_primary_and_first_fallback_failure_use_second_fallback(self, client_factory):
+        final_response = type("Response", (), {"text": "Second fallback answer"})()
+        client_factory.return_value.models.generate_content.side_effect = [
+            self.unavailable,
+            self.deadline_exceeded,
+            final_response,
+        ]
+
+        with self.assertLogs("ai_tools.services", level="WARNING") as captured:
+            answer = generate_ai_response("Test prompt")
+
+        self.assertEqual(answer, "Second fallback answer")
+        calls = client_factory.return_value.models.generate_content.call_args_list
         self.assertEqual([call.kwargs["model"] for call in calls], MODELS)
+        self.assertIn("HTTP 504 DEADLINE_EXCEEDED", captured.output[1])
+
+    @patch.dict(os.environ, {"GEMINI_API_KEY": "test-key"})
+    @patch("ai_tools.services.genai.Client")
+    def test_504_deadline_exceeded_moves_to_next_model(self, client_factory):
+        fallback_response = type("Response", (), {"text": "Fallback answer"})()
+        client_factory.return_value.models.generate_content.side_effect = [
+            self.deadline_exceeded,
+            fallback_response,
+        ]
+
+        with self.assertLogs("ai_tools.services", level="WARNING") as captured:
+            answer = generate_ai_response("Test prompt")
+
+        self.assertEqual(answer, "Fallback answer")
+        self.assertIn("HTTP 504 DEADLINE_EXCEEDED", captured.output[0])
 
     @patch.dict(os.environ, {"GEMINI_API_KEY": "test-key"})
     @patch("ai_tools.services.genai.Client")
     def test_primary_timeout_and_fallback_failure_raise_service_error(self, client_factory):
         client_factory.return_value.models.generate_content.side_effect = [
             httpx.ReadTimeout("provider request timed out"),
+            self.unavailable,
             self.unavailable,
         ]
 
@@ -126,6 +180,7 @@ class GeminiFallbackTests(TestCase):
     @patch("ai_tools.services.genai.Client")
     def test_all_model_failures_raise_clean_service_error(self, client_factory):
         client_factory.return_value.models.generate_content.side_effect = [
+            self.unavailable,
             self.unavailable,
             self.unavailable,
         ]
@@ -211,6 +266,7 @@ class AIToolEndpointTests(TestCase):
         client_factory.return_value.models.generate_content.side_effect = [
             httpx.ReadTimeout("provider request timed out"),
             httpx.ReadTimeout("fallback request timed out"),
+            httpx.ReadTimeout("second fallback request timed out"),
         ]
 
         with self.assertLogs("ai_tools.services", level="WARNING"):

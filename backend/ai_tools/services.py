@@ -1,6 +1,7 @@
 from google import genai
 import logging
 import os
+import httpx
 from google.genai import types
 
 
@@ -10,6 +11,7 @@ logger = logging.getLogger(__name__)
 MODELS = [
     "gemini-3.6-flash",
     "gemma-4-26b-a4b-it",
+    "gemini-3.5-flash-lite",
 ]
 
 # HttpOptions.timeout is in milliseconds. A 10 second bound per model keeps a
@@ -19,6 +21,20 @@ GEMINI_TIMEOUT_MS = 10_000
 
 class AIServiceUnavailable(RuntimeError):
     """Raised when no configured Gemini model can generate a response."""
+
+
+def _failure_category(error):
+    """Return safe provider status metadata without logging exception contents."""
+    status_code = getattr(error, "code", None)
+    provider_status = getattr(error, "status", None)
+
+    if status_code is not None:
+        return f"HTTP {status_code}" + (
+            f" {provider_status}" if provider_status else ""
+        )
+    if isinstance(error, (httpx.TimeoutException, TimeoutError)):
+        return "timeout"
+    return type(error).__name__
 
 
 def generate_ai_response(prompt):
@@ -50,14 +66,19 @@ def generate_ai_response(prompt):
         except Exception as error:
             last_error = error
 
+            category = _failure_category(error)
             if model_index < len(MODELS) - 1:
                 logger.warning(
-                    "Gemini model %s failed; trying configured fallback model",
+                    "Gemini model %s failed (%s); trying configured fallback model",
                     model,
-                    exc_info=True,
+                    category,
                 )
             else:
-                logger.exception("Gemini fallback model %s also failed", model)
+                logger.error(
+                    "Gemini model %s failed (%s); no configured models remain",
+                    model,
+                    category,
+                )
 
     raise AIServiceUnavailable(
         "All configured Gemini models are temporarily unavailable"
